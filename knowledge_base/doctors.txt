@@ -1,0 +1,31 @@
+HORIZON HEALTH CLINIC — DOCTOR DIRECTORY
+
+Dr. Sarah Bennett — General Medicine
+Available: Monday, Tuesday, Wednesday, Friday
+Time slots: 9:00 AM, 10:00 AM, 11:00 AM, 2:00 PM, 3:00 PM
+Average consultation length: 20 minutes.
+
+Dr. Michael Chen — Cardiology
+Available: Monday, Wednesday, Friday
+Time slots: 10:00 AM, 11:30 AM, 1:00 PM, 2:30 PM
+Average consultation length: 30 minutes. New patients must bring prior ECG reports if available.
+
+Dr. Amina Farooq — Pediatrics
+Available: Monday to Friday, and Saturday morning
+Time slots: 9:00 AM, 9:30 AM, 10:00 AM, 10:30 AM, 11:00 AM (weekdays); 9:00 AM to 12:00 PM (Saturday)
+Average consultation length: 15 minutes.
+
+Dr. James Okafor — Orthopedics
+Available: Tuesday, Thursday, Saturday
+Time slots: 10:00 AM, 11:00 AM, 1:00 PM, 3:00 PM
+Average consultation length: 25 minutes. X-ray referrals handled same day.
+
+Dr. Elena Rossi — Dermatology
+Available: Monday, Tuesday, Thursday
+Time slots: 11:00 AM, 12:00 PM, 2:00 PM, 4:00 PM
+Average consultation length: 20 minutes.
+
+Dr. Faisal Ahmed — Dental Care
+Available: Monday to Saturday
+Time slots: 9:00 AM, 10:30 AM, 12:00 PM, 2:00 PM, 4:00 PM, 5:30 PM
+Average consultation length: 30 minutes for procedures, 15 minutes for checkups.

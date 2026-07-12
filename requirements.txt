@@ -1,0 +1,12 @@
+# Core LLM + orchestration
+openai
+langgraph
+python-dotenv
+
+# RAG layer (Phase 2)
+qdrant-client
+sentence-transformers
+
+# Webhook server (Phase 4)
+fastapi
+uvicorn
