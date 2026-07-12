@@ -4,6 +4,11 @@ langgraph
 python-dotenv
 
 # RAG layer (Phase 2)
+# CPU-only torch — without this, sentence-transformers pulls the full GPU
+# build (multi-GB of nvidia-cuda-* packages) which blows past Render's
+# free-tier 512MB RAM limit and crashes the deploy with an OOM error.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
 qdrant-client
 sentence-transformers
 
