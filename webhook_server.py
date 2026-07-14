@@ -28,8 +28,19 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from agents.graph import run_turn
+from agents import retrieval
 
 app = FastAPI()
+
+
+@app.on_event("startup")
+async def preload_models():
+    """
+    Loads the embedding model and Qdrant client once, when the server
+    starts (deploy time / wake-from-sleep time) — not during a live call.
+    See agents/retrieval.py's preload() docstring for why this matters.
+    """
+    retrieval.preload()
 
 # call_id -> {"conversation_history": [...], "collected_data": {...}}
 call_sessions: dict = {}

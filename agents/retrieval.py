@@ -48,6 +48,23 @@ def _get_client():
     return _client
 
 
+def preload():
+    """
+    Forces the embedding model to download/load and the Qdrant client to
+    initialize immediately, instead of waiting for the first live query.
+
+    Why this matters: on Render's free tier, the server spins down after
+    ~15 minutes idle. The FIRST request after waking up used to pay for
+    the ~4-5 second model download on top of the actual LLM calls — often
+    enough to blow past VAPI's silence timeout and end the call before any
+    response was ever spoken. Calling this at server startup (see
+    webhook_server.py's startup event) moves that cost to deploy/wake-up
+    time, when nobody's on the phone waiting.
+    """
+    _get_model()
+    _get_client()
+
+
 def retrieve_context(query: str, top_k: int = 3) -> str:
     """
     Given a natural language query, returns the top_k most relevant
