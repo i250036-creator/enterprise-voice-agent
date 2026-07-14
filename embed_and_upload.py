@@ -1,100 +1,109 @@
 """
 embed_and_upload.py
 
-Reads all .txt files from knowledge_base/, splits them into chunks,
-generates embeddings using a HuggingFace sentence-transformer model,
-and uploads them to a Qdrant collection called 'hospital_knowledge'.
+Re-embeds every .txt file in knowledge_base/ using fastembed and uploads
+them to the Qdrant "hospital_knowledge" collection.
 
-Run this once after adding/updating any file in knowledge_base/.
+IMPORTANT: run this once after switching retrieval.py from
+sentence-transformers to fastembed. Vectors from two different embedding
+pipelines are NOT compatible with each other (different models produce
+different vector spaces), so the collection needs to be recreated with
+vectors generated the same way retrieval.py now generates its query vectors
+— otherwise similarity search returns nonsense.
+
+Usage:
+    python embed_and_upload.py
 """
 
 import os
-import glob
-from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
+import uuid
+from pathlib import Path
+from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-# ---- Load environment variables from .env ----
+from dotenv import load_dotenv
+
 load_dotenv()
 
-QDRANT_URL = os.getenv("QDRANT_URL")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 COLLECTION_NAME = "hospital_knowledge"
-KNOWLEDGE_BASE_DIR = "knowledge_base"
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+KNOWLEDGE_BASE_DIR = Path("knowledge_base")
+CHUNK_SIZE = 700  # characters — rough proxy for the "500-800 token" target from the spec
+CHUNK_OVERLAP = 100
 
-# ---- Step 1: Load the embedding model ----
-# all-MiniLM-L6-v2 is small, fast, and free — good enough for FAQ-style retrieval.
-print("Loading embedding model...")
-model = SentenceTransformer("all-MiniLM-L6-v2")
-VECTOR_SIZE = model.get_sentence_embedding_dimension()  # 384 for this model
 
-# ---- Step 2: Connect to Qdrant ----
-print("Connecting to Qdrant...")
-client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP):
+    """
+    Simple sliding-window chunker. Not as smart as LangChain's
+    RecursiveCharacterTextSplitter, but avoids pulling in another heavy
+    dependency just for this — good enough for the small, clean knowledge
+    base files in this project.
+    """
+    text = text.strip()
+    if len(text) <= chunk_size:
+        return [text]
 
-# Recreate the collection fresh each time this script runs.
-# This keeps things simple for development — in production you'd want incremental updates.
-client.recreate_collection(
-    collection_name=COLLECTION_NAME,
-    vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
-)
-print(f"Collection '{COLLECTION_NAME}' created.")
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end].strip())
+        start += chunk_size - overlap
+    return [c for c in chunks if c]
 
-# ---- Step 3: Load and chunk documents ----
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=600,       # roughly 500-800 tokens as planned in Phase 2
-    chunk_overlap=80,     # slight overlap so context isn't cut mid-sentence
-    separators=["\n\n", "\n", ". ", " "],
-)
 
-all_chunks = []
-all_metadata = []
+def main():
+    if not KNOWLEDGE_BASE_DIR.exists():
+        raise SystemExit(f"'{KNOWLEDGE_BASE_DIR}' folder not found. Run this from the project root.")
 
-txt_files = glob.glob(os.path.join(KNOWLEDGE_BASE_DIR, "*.txt"))
-print(f"Found {len(txt_files)} document(s) in {KNOWLEDGE_BASE_DIR}/")
+    txt_files = sorted(KNOWLEDGE_BASE_DIR.glob("*.txt"))
+    if not txt_files:
+        raise SystemExit(f"No .txt files found in '{KNOWLEDGE_BASE_DIR}'.")
 
-for filepath in txt_files:
-    filename = os.path.basename(filepath)
-    with open(filepath, "r", encoding="utf-8") as f:
-        text = f.read()
+    print(f"Found {len(txt_files)} knowledge base file(s): {[f.name for f in txt_files]}")
 
-    chunks = splitter.split_text(text)
-    for chunk in chunks:
-        all_chunks.append(chunk)
-        all_metadata.append({"source": filename, "text": chunk})
+    print(f"Loading embedding model ({EMBEDDING_MODEL_NAME})...")
+    model = TextEmbedding(model_name=EMBEDDING_MODEL_NAME)
 
-print(f"Total chunks created: {len(all_chunks)}")
+    # Build all chunks across all files first, so we know the embedding
+    # dimension before creating the collection.
+    all_chunks = []  # list of (source_filename, chunk_text)
+    for filepath in txt_files:
+        content = filepath.read_text(encoding="utf-8")
+        for chunk in chunk_text(content):
+            all_chunks.append((filepath.name, chunk))
 
-# ---- Step 4: Generate embeddings ----
-print("Generating embeddings...")
-embeddings = model.encode(all_chunks, show_progress_bar=True)
+    print(f"Split into {len(all_chunks)} chunk(s). Embedding...")
+    texts = [c[1] for c in all_chunks]
+    vectors = list(model.embed(texts))
+    vector_size = len(vectors[0])
+    print(f"Embedding dimension: {vector_size}")
 
-# ---- Step 5: Upload to Qdrant ----
-print("Uploading to Qdrant...")
-points = [
-    PointStruct(
-        id=idx,
-        vector=embedding.tolist(),
-        payload=all_metadata[idx],
+    client = QdrantClient(
+        url=os.getenv("QDRANT_URL"),
+        api_key=os.getenv("QDRANT_API_KEY"),
     )
-    for idx, embedding in enumerate(embeddings)
-]
 
-client.upsert(collection_name=COLLECTION_NAME, points=points)
-print(f"Done. {len(points)} chunks uploaded to '{COLLECTION_NAME}'.")
+    print(f"Recreating collection '{COLLECTION_NAME}'...")
+    client.recreate_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+    )
 
-# ---- Step 6: Quick test query ----
-print("\n--- Running a test query ---")
-test_query = "What are the clinic's emergency department hours?"
-test_embedding = model.encode(test_query).tolist()
+    points = [
+        PointStruct(
+            id=str(uuid.uuid4()),
+            vector=vectors[i].tolist(),
+            payload={"source": all_chunks[i][0], "text": all_chunks[i][1]},
+        )
+        for i in range(len(all_chunks))
+    ]
 
-results = client.query_points(
-    collection_name=COLLECTION_NAME,
-    query=test_embedding,
-    limit=3,
-).points
+    print(f"Uploading {len(points)} point(s) to Qdrant...")
+    client.upsert(collection_name=COLLECTION_NAME, points=points)
 
-for i, result in enumerate(results, 1):
-    print(f"\nResult {i} (score: {result.score:.3f}, source: {result.payload['source']})")
-    print(result.payload["text"][:200] + "...")
+    print("Done. Knowledge base re-embedded and uploaded with fastembed.")
+
+
+if __name__ == "__main__":
+    main()

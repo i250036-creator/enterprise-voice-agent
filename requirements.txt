@@ -4,8 +4,12 @@ langgraph
 python-dotenv
 
 # RAG layer (Phase 2)
+# fastembed runs the embedding model via ONNX Runtime instead of full
+# PyTorch — dramatically lighter at runtime, which is what fixed the
+# Render free-tier (512MB RAM) OOM crash that sentence-transformers/torch
+# was causing the moment the embedding model actually loaded.
+fastembed
 qdrant-client
-sentence-transformers
 
 # Webhook server (Phase 4)
 fastapi
